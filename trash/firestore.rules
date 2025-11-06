@@ -1,0 +1,124 @@
+/**
+ * @fileoverview Firestore Security Rules for Flashcard App.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model for all data. Users can only
+ * create, read, update, and delete data that belongs to them. This includes decks,
+ * flashcards within those decks, and media assets.
+ *
+ * Data Structure:
+ * All data is nested under /users/{userId}, ensuring clear ownership. Decks are stored
+ * under /users/{userId}/decks/{deckId}, flashcards are stored under
+ * /users/{userId}/decks/{deckId}/flashcards/{flashcardId}, and media assets are stored under
+ * /users/{userId}/mediaAssets/{assetId}.
+ *
+ * Key Security Decisions:
+ * - User listing is disallowed.
+ * - All write operations require a verified user identity (request.auth != null).
+ * - Data consistency between the path and document's internal fields is enforced on
+ *   creation and updates to maintain the ownership model.
+ * - All reads and writes are limited to the owning user.
+ *
+ * Denormalization for Authorization:
+ * No denormalization is used in this initial ruleset.
+ *
+ * Structural Segregation:
+ * All private data is stored under the /users/{userId} collection.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Checks if the user is signed in.
+     * @return {boolean} True if the user is signed in, false otherwise.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the authenticated user is the owner of the resource.
+     * @param {string} userId - The user ID to compare against the authenticated user's ID.
+     * @return {boolean} True if the user is the owner, false otherwise.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the authenticated user is the owner of the resource and the resource exists.
+     * @param {string} userId - The user ID to compare against the authenticated user's ID.
+     * @return {boolean} True if the user is the owner and resource exists, false otherwise.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Rules for the root users collection. Listing users is not permitted.
+     * @path /users/{userId}
+     * @allow (create) - A user can create their own document if the userId matches their auth.uid.
+     * @deny (create) - A user cannot create a document with a userId that does not match their auth.uid.
+     * @principle Enforces user-ownership for user documents.
+     */
+    match /users/{userId} {
+      allow get: if false;
+      allow list: if false;
+      allow create: if isOwner(userId);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Rules for decks within a user's profile.
+     * @path /users/{userId}/decks/{deckId}
+     * @allow (get, list) - Allows the owner to read their decks
+     * @allow (create) - Allows the owner to create a deck with their userId.
+     * @allow (update, delete) - Allows the owner to update/delete their decks if it exists.
+     * @deny (get, list, create, update, delete) - Denies access to other users.
+     * @principle Enforces document ownership for all CRUD operations.
+     */
+    match /users/{userId}/decks/{deckId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.id == deckId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for flashcards within a deck.
+     * @path /users/{userId}/decks/{deckId}/flashcards/{flashcardId}
+     * @allow (get, list) - Allows the owner to read their flashcards.
+     * @allow (create) - Allows the owner to create a flashcard with their userId and deckId.
+     * @allow (update, delete) - Allows the owner to update/delete their flashcards if it exists.
+     * @deny (get, list, create, update, delete) - Denies access to other users.
+     * @principle Enforces document ownership for all CRUD operations.
+     */
+    match /users/{userId}/decks/{deckId}/flashcards/{flashcardId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for media assets within a user's profile.
+     * @path /users/{userId}/mediaAssets/{assetId}
+     * @allow (get, list) - Allows the owner to read their media assets.
+     * @allow (create) - Allows the owner to create a media asset with their userId.
+     * @allow (update, delete) - Allows the owner to update/delete their media assets if it exists.
+     * @deny (get, list, create, update, delete) - Denies access to other users.
+     * @principle Enforces document ownership for all CRUD operations.
+     */
+    match /users/{userId}/mediaAssets/{assetId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+  }
+}

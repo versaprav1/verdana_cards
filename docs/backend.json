@@ -1,0 +1,105 @@
+
+{
+  "entities": {
+    "Deck": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Deck",
+      "type": "object",
+      "description": "Represents a flashcard deck created by a user.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the deck."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the deck."
+        },
+        "language": {
+          "type": "string",
+          "enum": ["English", "German"]
+        },
+        "createdAt": {
+            "type": "string",
+            "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "language",
+        "createdAt"
+      ]
+    },
+    "Flashcard": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Flashcard",
+      "type": "object",
+      "description": "Represents a single flashcard within a deck.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the flashcard."
+        },
+        "front": {
+          "type": "string",
+          "description": "Content displayed on the front of the flashcard."
+        },
+        "back": {
+          "type": "string",
+          "description": "Content displayed on the back of the flashcard."
+        },
+        "imageUrl": {
+            "type": "string",
+            "format": "uri"
+        },
+        "srsLevel": {
+            "type": "number"
+        },
+        "nextReviewDate": {
+            "type": "string",
+            "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "front",
+        "back",
+        "srsLevel",
+        "nextReviewDate"
+      ]
+    },
+    "MediaAsset": {
+        "title": "Media Asset",
+        "type": "object",
+        "description": "Represents a generated image or video asset.",
+        "properties": {
+            "id": { "type": "string" },
+            "type": { "type": "string", "enum": ["image", "video"] },
+            "url": { "type": "string", "format": "uri" },
+            "prompt": { "type": "string" },
+            "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "type", "url", "prompt", "createdAt"]
+    }
+  },
+  "auth": {
+    "providers": [
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "/users/{userId}/decks/{deckId}": {
+      "schema": { "$ref": "#/entities/Deck" },
+      "description": "Stores user-created flashcard decks."
+    },
+    "/users/{userId}/decks/{deckId}/flashcards/{flashcardId}": {
+      "schema": { "$ref": "#/entities/Flashcard" },
+      "description": "Stores flashcards belonging to a specific deck."
+    },
+    "/users/{userId}/mediaAssets/{assetId}": {
+      "schema": { "$ref": "#/entities/MediaAsset" },
+      "description": "Stores user-generated media assets."
+    }
+  }
+}
