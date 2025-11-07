@@ -1,27 +1,43 @@
-
-"use client";
+\"use client\";
 
 import type { ReactNode } from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { type Deck, type Flashcard, type QuizAttempt, type MediaAsset } from '@/lib/types';
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from '@/hooks/use-toast';
 import { addDays } from 'date-fns';
-import { useUser, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, doc, deleteDoc, setDoc, addDoc, serverTimestamp, query, orderBy, where, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
-import { useCollection } from '@/firebase';
+import supabase from '@/lib/supabaseClient';
+import { useSupabaseAuth } from '@/lib/supabaseHooks';
 
 interface DecksContextType {
   decks: Deck[];
   mediaAssets: MediaAsset[];
   loading: boolean;
-  addDeck: (title: string, language: 'English' | 'German', flashcards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]) => void;
+  addDeck: (
+    title: string,
+    language: 'English' | 'German',
+    flashcards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]
+  ) => void;
   deleteDeck: (deckId: string) => void;
   updateDeckTitle: (deckId: string, newTitle: string) => void;
-  addCardToDeck: (deckId: string, card: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>) => void;
-  addCardsToDeck: (deckId: string, cards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]) => void;
-  updateCardInDeck: (deckId: string, cardId: string, updatedCard: Partial<Omit<Flashcard, 'id'>>) => void;
+  addCardToDeck: (
+    deckId: string,
+    card: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>
+  ) => void;
+  addCardsToDeck: (
+    deckId: string,
+    cards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]
+  ) => void;
+  updateCardInDeck: (
+    deckId: string,
+    cardId: string,
+    updatedCard: Partial<Omit<Flashcard, 'id'>>
+  ) => void;
   deleteCardFromDeck: (deckId: string, cardId: string) => void;
-  updateCardSrs: (deckId: string, cardId: string, rating: 'again' | 'hard' | 'good' | 'easy') => void;
+  updateCardSrs: (
+    deckId: string,
+    cardId: string,
+    rating: 'again' | 'hard' | 'good' | 'easy'
+  ) => void;
   addQuizResultToDeck: (deckId: string, attempt: QuizAttempt) => void;
   addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>) => void;
   deleteMediaAsset: (assetId: string) => void;
@@ -31,242 +47,415 @@ const DecksContext = createContext<DecksContextType | undefined>(undefined);
 
 export function DecksProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { user, isLoading: isUserLoading } = useSupabaseAuth();
 
   const [decks, setDecks] = useState<Deck[]>([]);
-  const [decksLoading, setDecksLoading] = useState(true);
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const mediaAssetsQuery = useMemoFirebase(() => {
-    if (!user || !firestore) return null;
-    return query(collection(firestore, 'users', user.uid, 'mediaAssets'), orderBy('createdAt', 'desc'));
-  }, [firestore, user]);
-
-  const { data: mediaAssets, isLoading: mediaAssetsLoading } = useCollection<MediaAsset>(mediaAssetsQuery);
-  
+  // ---------- Fetch Media Assets ----------
   useEffect(() => {
-    if (!user || !firestore) {
-      setDecks([]);
-      setDecksLoading(false);
+    if (!user) {
+      setMediaAssets([]);
       return;
     }
-
-    setDecksLoading(true);
-    const decksQuery = query(collection(firestore, 'users', user.uid, 'decks'), orderBy('createdAt', 'desc'));
-
-    const unsubscribe = onSnapshot(decksQuery, async (snapshot) => {
-      const decksData = await Promise.all(snapshot.docs.map(async (deckDoc) => {
-        const deck = deckDoc.data() as Omit<Deck, 'flashcards'>;
-        
-        const flashcardsQuery = query(collection(deckDoc.ref, 'flashcards'));
-        const flashcardsSnapshot = await getDocs(flashcardsQuery);
-        const flashcards = flashcardsSnapshot.docs.map(cardDoc => cardDoc.data() as Flashcard);
-
-        return {
-          ...deck,
-          flashcards: flashcards,
-        } as Deck;
-      }));
-      setDecks(decksData);
-      setDecksLoading(false);
-    }, (error) => {
-      console.error("Error fetching decks: ", error);
-      setDecksLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [user, firestore]);
-
-
-  const loading = isUserLoading || decksLoading || mediaAssetsLoading;
-
-  const addDeck = useCallback(async (title: string, language: 'English' | 'German', flashcards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]) => {
-    if (!user || !firestore) return;
-    const newDeckRef = doc(collection(firestore, 'users', user.uid, 'decks'));
-    const newDeckData = {
-      id: newDeckRef.id,
-      title,
-      language,
-      createdAt: serverTimestamp(),
-      quizHistory: [],
+    const fetchAssets = async () => {
+      const { data, error } = await supabase
+        .from('media_assets')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error('Error fetching media assets:', error);
+        setMediaAssets([]);
+        return;
+      }
+      setMediaAssets(data as MediaAsset[]);
     };
-    await setDoc(newDeckRef, newDeckData);
+    fetchAssets();
+  }, [user]);
 
-    if (flashcards.length > 0) {
-        const batch = writeBatch(firestore);
-        const flashcardsColRef = collection(newDeckRef, 'flashcards');
-        for (const card of flashcards) {
-            const cardRef = doc(flashcardsColRef);
-            const newCard = {
-                ...card,
-                id: cardRef.id,
-                srsLevel: 0,
-                nextReviewDate: new Date().toISOString()
-            };
-            batch.set(cardRef, newCard);
+  // ---------- Fetch Decks & Flashcards ----------
+  useEffect(() => {
+    if (!user) {
+      setDecks([]);
+      setLoading(false);
+      return;
+    }
+    const fetchAll = async () => {
+      setLoading(true);
+      const { data: deckData, error: deckError } = await supabase
+        .from('decks')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (deckError) {
+        console.error('Error fetching decks:', deckError);
+        setDecks([]);
+        setLoading(false);
+        return;
+      }
+
+      const decksWithCards: Deck[] = await Promise.all(
+        (deckData as Deck[]).map(async (deck) => {
+          const { data: cardsData, error: cardsError } = await supabase
+            .from('flashcards')
+            .select('*')
+            .eq('deck_id', deck.id);
+
+          if (cardsError) {
+            console.error('Error fetching flashcards for deck', deck.id, cardsError);
+            return { ...deck, flashcards: [] };
+          }
+
+          return { ...deck, flashcards: cardsData as Flashcard[] };
+        })
+      );
+
+      setDecks(decksWithCards);
+      setLoading(false);
+    };
+
+    fetchAll();
+  }, [user]);
+
+  const addDeck = useCallback(
+    async (
+      title: string,
+      language: 'English' | 'German',
+      flashcards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]
+    ) => {
+      if (!user) return;
+      // Insert deck
+      const { data: deckInsert, error: deckError } = await supabase
+        .from('decks')
+        .insert({
+          user_id: user.id,
+          title,
+          language,
+          created_at: new Date().toISOString(),
+          quiz_history: [],
+        })
+        .select();
+
+      if (deckError) {
+        console.error('Error adding deck:', deckError);
+        return;
+      }
+      const newDeck = deckInsert[0] as Deck;
+
+      // Insert flashcards if any
+      if (flashcards.length > 0) {
+        const flashcardsToInsert = flashcards.map((c) => ({
+          ...c,
+          deck_id: newDeck.id,
+          srs_level: 0,
+          next_review_date: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        }));
+        const { error: cardsError } = await supabase
+          .from('flashcards')
+          .insert(flashcardsToInsert);
+        if (cardsError) {
+          console.error('Error adding flashcards:', cardsError);
         }
-        await batch.commit();
-    }
-  }, [user, firestore]);
+      }
 
-  const deleteDeck = useCallback(async (deckId: string) => {
-    if (!user || !firestore) return;
-    try {
-        const deckRef = doc(firestore, 'users', user.uid, 'decks', deckId);
-        
-        // Delete all flashcards in the subcollection
-        const flashcardsQuery = collection(deckRef, 'flashcards');
-        const flashcardsSnapshot = await getDocs(flashcardsQuery);
-        const batch = writeBatch(firestore);
-        flashcardsSnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        await batch.commit();
+      // Refresh decks
+      setDecks((prev) => [
+        ...prev,
+        { ...newDeck, flashcards: flashcards.map((c) => ({ ...c, id: '', srsLevel: 0, nextReviewDate: new Date().toISOString() })) },
+      ]);
+    },
+    [user]
+  );
 
-        // Delete the deck itself
-        await deleteDoc(deckRef);
+  const deleteDeck = useCallback(
+    async (deckId: string) => {
+      if (!user) return;
+      // Delete flashcards first
+      const { error: cardsError } = await supabase
+        .from('flashcards')
+        .delete()
+        .eq('deck_id', deckId);
+      if (cardsError) {
+        console.error('Error deleting flashcards:', cardsError);
+        return;
+      }
 
-        toast({
-            title: "Deck Deleted",
-            description: "The deck and all its cards have been permanently removed.",
-        });
-    } catch (error) {
-        console.error("Error deleting deck: ", error);
-        toast({
-            title: "Error",
-            description: "Failed to delete the deck. Please try again.",
-            variant: "destructive",
-        });
-    }
-  }, [user, firestore, toast]);
+      // Delete deck
+      const { error: deckError } = await supabase
+        .from('decks')
+        .delete()
+        .eq('id', deckId);
+      if (deckError) {
+        console.error('Error deleting deck:', deckError);
+        return;
+      }
 
-  const updateDeckTitle = useCallback(async (deckId: string, newTitle: string) => {
-    if (!user || !firestore) return;
-    const deckRef = doc(firestore, 'users', user.uid, 'decks', deckId);
-    await setDoc(deckRef, { title: newTitle }, { merge: true });
-  }, [user, firestore]);
-  
-  const addCardsToDeck = useCallback(async (deckId: string, cards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]) => {
-    if (!user || !firestore) return;
-    const deckRef = doc(firestore, 'users', user.uid, 'decks', deckId);
+      toast({
+        title: 'Deck Deleted',
+        description: 'The deck and all its cards have been permanently removed.',
+      });
 
-    const batch = writeBatch(firestore);
-    const flashcardsColRef = collection(deckRef, 'flashcards');
-    for(const card of cards) {
-      const cardRef = doc(flashcardsColRef);
-      const newCard: Flashcard = { 
-          ...card, 
-          id: cardRef.id,
-          srsLevel: 0,
-          nextReviewDate: new Date().toISOString()
-      };
-      batch.set(cardRef, newCard);
-    }
-    await batch.commit();
-  }, [user, firestore]);
+      setDecks((prev) => prev.filter((d) => d.id !== deckId));
+    },
+    [user, toast]
+  );
 
-  const addCardToDeck = useCallback((deckId: string, card: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>) => {
-    addCardsToDeck(deckId, [card]);
-  }, [addCardsToDeck]);
+  const updateDeckTitle = useCallback(
+    async (deckId: string, newTitle: string) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('decks')
+        .update({ title: newTitle })
+        .eq('id', deckId);
+      if (error) {
+        console.error('Error updating deck title:', error);
+        return;
+      }
+      setDecks((prev) =>
+        prev.map((d) => (d.id === deckId ? { ...d, title: newTitle } : d))
+      );
+    },
+    [user]
+  );
 
-  const updateCardInDeck = useCallback(async (deckId: string, cardId: string, updatedCard: Partial<Omit<Flashcard, 'id'>>) => {
-    if (!user || !firestore) return;
-    const cardRef = doc(firestore, 'users', user.uid, 'decks', deckId, 'flashcards', cardId);
-    await setDoc(cardRef, updatedCard, { merge: true });
-  }, [user, firestore]);
+  const addCardsToDeck = useCallback(
+    async (
+      deckId: string,
+      cards: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>[]
+    ) => {
+      if (!user) return;
+      const cardsToInsert = cards.map((c) => ({
+        ...c,
+        deck_id: deckId,
+        srs_level: 0,
+        next_review_date: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase.from('flashcards').insert(cardsToInsert);
+      if (error) {
+        console.error('Error adding cards:', error);
+        return;
+      }
+      // Refresh decks
+      setDecks((prev) =>
+        prev.map((d) =>
+          d.id === deckId
+            ? {
+                ...d,
+                flashcards: [
+                  ...d.flashcards,
+                  ...cards.map((c) => ({
+                    ...c,
+                    id: '',
+                    srsLevel: 0,
+                    nextReviewDate: new Date().toISOString(),
+                  })),
+                ],
+              }
+            : d
+        )
+      );
+    },
+    [user]
+  );
 
-  const deleteCardFromDeck = useCallback(async (deckId: string, cardId: string) => {
-    if (!user || !firestore) return;
-    const cardRef = doc(firestore, 'users', user.uid, 'decks', deckId, 'flashcards', cardId);
-    await deleteDoc(cardRef);
-  }, [user, firestore]);
-    
-  const getSrsInterval = (srsLevel: number, rating: 'again' | 'hard' | 'good' | 'easy'): number => {
+  const addCardToDeck = useCallback(
+    (deckId: string, card: Omit<Flashcard, 'id' | 'srsLevel' | 'nextReviewDate'>) => {
+      addCardsToDeck(deckId, [card]);
+    },
+    [addCardsToDeck]
+  );
+
+  const updateCardInDeck = useCallback(
+    async (deckId: string, cardId: string, updatedCard: Partial<Omit<Flashcard, 'id'>>) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('flashcards')
+        .update(updatedCard)
+        .eq('id', cardId);
+      if (error) {
+        console.error('Error updating card:', error);
+        return;
+      }
+      setDecks((prev) =>
+        prev.map((d) =>
+          d.id === deckId
+            ? {
+                ...d,
+                flashcards: d.flashcards.map((c) =>
+                  c.id === cardId ? { ...c, ...updatedCard } : c
+                ),
+              }
+            : d
+        )
+      );
+    },
+    [user]
+  );
+
+  const deleteCardFromDeck = useCallback(
+    async (deckId: string, cardId: string) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('flashcards')
+        .delete()
+        .eq('id', cardId);
+      if (error) {
+        console.error('Error deleting card:', error);
+        return;
+      }
+      setDecks((prev) =>
+        prev.map((d) =>
+          d.id === deckId
+            ? { ...d, flashcards: d.flashcards.filter((c) => c.id !== cardId) }
+            : d
+        )
+      );
+    },
+    [user]
+  );
+
+  const getSrsInterval = (
+    srsLevel: number,
+    rating: 'again' | 'hard' | 'good' | 'easy'
+  ): number => {
     if (rating === 'again') return 0;
-
-    const baseIntervals: { [key in typeof rating]?: number[] } = {
-        hard: [0, 1, 2, 3, 5, 8],
-        good: [1, 2, 4, 8, 16, 32],
-        easy: [2, 4, 8, 16, 32, 64],
-    }
-
+    const baseIntervals: { [key: string]: number[] } = {
+      hard: [0, 1, 2, 3, 5, 8],
+      good: [1, 2, 4, 8, 16, 32],
+      easy: [2, 4, 8, 16, 32, 64],
+    };
     const intervals = baseIntervals[rating];
     if (!intervals) return 1;
-
-    return intervals[Math.min(srsLevel, intervals.length - 1)] || intervals[intervals.length - 1];
+    return intervals[Math.min(srsLevel, intervals.length - 1)];
   };
 
-  const updateCardSrs = useCallback(async (deckId: string, cardId: string, rating: 'again' | 'hard' | 'good' | 'easy') => {
-      if (!user || !firestore) return;
-      
-      const deckRef = doc(firestore, 'users', user.uid, 'decks', deckId);
-      const cardRef = doc(deckRef, 'flashcards', cardId);
-      
-      const currentCard = decks?.find(d => d.id === deckId)?.flashcards.find(c => c.id === cardId);
-      if (!currentCard) return;
+  const updateCardSrs = useCallback(
+    async (deckId: string, cardId: string, rating: 'again' | 'hard' | 'good' | 'easy') => {
+      if (!user) return;
+      const deck = decks.find((d) => d.id === deckId);
+      const card = deck?.flashcards.find((c) => c.id === cardId);
+      if (!card) return;
 
-      let newSrsLevel = currentCard.srsLevel;
+      let newSrsLevel = card.srsLevel;
       if (rating === 'again') {
-          newSrsLevel = 0;
+        newSrsLevel = 0;
       } else if (rating === 'good' || rating === 'easy') {
-          newSrsLevel += 1;
+        newSrsLevel += 1;
       }
-      
-      const intervalDays = getSrsInterval(currentCard.srsLevel, rating);
+
+      const intervalDays = getSrsInterval(card.srsLevel, rating);
       const newNextReviewDate = addDays(new Date(), intervalDays).toISOString();
 
-      await setDoc(cardRef, {
-        srsLevel: newSrsLevel,
-        nextReviewDate: newNextReviewDate,
-      }, { merge: true });
+      const { error } = await supabase.from('flashcards').update({
+        srs_level: newSrsLevel,
+        next_review_date: newNextReviewDate,
+      }).eq('id', cardId);
+      if (error) {
+        console.error('Error updating card SRS:', error);
+        return;
+      }
 
-  }, [user, firestore, decks]);
+      setDecks((prev) =>
+        prev.map((d) =>
+          d.id === deckId
+            ? {
+                ...d,
+                flashcards: d.flashcards.map((c) =>
+                  c.id === cardId
+                    ? { ...c, srsLevel: newSrsLevel, nextReviewDate: newNextReviewDate }
+                    : c
+                ),
+              }
+            : d
+        )
+      );
+    },
+    [user, decks]
+  );
 
-  const addQuizResultToDeck = useCallback(async (deckId: string, attempt: QuizAttempt) => {
-    if (!user || !firestore) return;
-    const deckRef = doc(firestore, 'users', user.uid, 'decks', deckId);
-    const existingDeck = decks?.find(d => d.id === deckId);
-    if (!existingDeck) return;
+  const addQuizResultToDeck = useCallback(
+    async (deckId: string, attempt: QuizAttempt) => {
+      if (!user) return;
+      const deck = decks.find((d) => d.id === deckId);
+      if (!deck) return;
+      const newHistory = [attempt, ...(deck.quizHistory ?? [])].slice(0, 5);
+      const { error } = await supabase
+        .from('decks')
+        .update({ quiz_history: newHistory })
+        .eq('id', deckId);
+      if (error) {
+        console.error('Error updating quiz history:', error);
+        return;
+      }
+      setDecks((prev) =>
+        prev.map((d) =>
+          d.id === deckId ? { ...d, quizHistory: newHistory } : d
+        )
+      );
+    },
+    [user, decks]
+  );
 
-    const newHistory = [attempt, ...(existingDeck.quizHistory || [])].slice(0, 5); // Keep last 5 attempts
-    await setDoc(deckRef, { quizHistory: newHistory }, { merge: true });
-  }, [user, firestore, decks]);
+  const addMediaAsset = useCallback(
+    async (asset: Omit<MediaAsset, 'id' | 'createdAt'>) => {
+      if (!user) return;
+      const { error, data } = await supabase
+        .from('media_assets')
+        .insert({
+          user_id: user.id,
+          ...asset,
+          created_at: new Date().toISOString(),
+        })
+        .select();
+      if (error) {
+        console.error('Error adding media asset:', error);
+        return;
+      }
+      setMediaAssets((prev) => [...prev, data[0] as MediaAsset]);
+    },
+    [user]
+  );
 
-  const addMediaAsset = useCallback(async (asset: Omit<MediaAsset, 'id' | 'createdAt'>) => {
-     if (!user || !firestore) return;
-    const newAssetRef = doc(collection(firestore, 'users', user.uid, 'mediaAssets'));
-    const newAsset = {
-        ...asset,
-        id: newAssetRef.id,
-        createdAt: new Date().toISOString()
-    };
-    await setDoc(newAssetRef, newAsset);
-  }, [user, firestore]);
-
-  const deleteMediaAsset = useCallback(async (assetId: string) => {
-    if (!user || !firestore) return;
-    const assetRef = doc(firestore, 'users', user.uid, 'mediaAssets', assetId);
-    await deleteDoc(assetRef);
-  }, [user, firestore]);
-
+  const deleteMediaAsset = useCallback(
+    async (assetId: string) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('media_assets')
+        .delete()
+        .eq('id', assetId);
+      if (error) {
+        console.error('Error deleting media asset:', error);
+        return;
+      }
+      setMediaAssets((prev) => prev.filter((a) => a.id !== assetId));
+    },
+    [user]
+  );
 
   return (
-    <DecksContext.Provider value={{
-      decks: decks || [],
-      mediaAssets: mediaAssets || [],
-      loading,
-      addDeck,
-      deleteDeck,
-      updateDeckTitle,
-      addCardToDeck,
-      addCardsToDeck,
-      updateCardInDeck,
-      deleteCardFromDeck,
-      updateCardSrs,
-      addQuizResultToDeck,
-      addMediaAsset,
-      deleteMediaAsset
-    }}>
+    <DecksContext.Provider
+      value={{
+        decks,
+        mediaAssets,
+        loading,
+        addDeck,
+        deleteDeck,
+        updateDeckTitle,
+        addCardToDeck,
+        addCardsToDeck,
+        updateCardInDeck,
+        deleteCardFromDeck,
+        updateCardSrs,
+        addQuizResultToDeck,
+        addMediaAsset,
+        deleteMediaAsset,
+      }}
+    >
       {children}
     </DecksContext.Provider>
   );
