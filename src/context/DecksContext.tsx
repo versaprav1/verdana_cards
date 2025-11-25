@@ -1,4 +1,4 @@
-\"use client\";
+"use client";
 
 import type { ReactNode } from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
@@ -245,17 +245,17 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         prev.map((d) =>
           d.id === deckId
             ? {
-                ...d,
-                flashcards: [
-                  ...d.flashcards,
-                  ...cards.map((c) => ({
-                    ...c,
-                    id: '',
-                    srsLevel: 0,
-                    nextReviewDate: new Date().toISOString(),
-                  })),
-                ],
-              }
+              ...d,
+              flashcards: [
+                ...d.flashcards,
+                ...cards.map((c) => ({
+                  ...c,
+                  id: '',
+                  srsLevel: 0,
+                  nextReviewDate: new Date().toISOString(),
+                })),
+              ],
+            }
             : d
         )
       );
@@ -285,11 +285,11 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         prev.map((d) =>
           d.id === deckId
             ? {
-                ...d,
-                flashcards: d.flashcards.map((c) =>
-                  c.id === cardId ? { ...c, ...updatedCard } : c
-                ),
-              }
+              ...d,
+              flashcards: d.flashcards.map((c) =>
+                c.id === cardId ? { ...c, ...updatedCard } : c
+              ),
+            }
             : d
         )
       );
@@ -364,13 +364,13 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         prev.map((d) =>
           d.id === deckId
             ? {
-                ...d,
-                flashcards: d.flashcards.map((c) =>
-                  c.id === cardId
-                    ? { ...c, srsLevel: newSrsLevel, nextReviewDate: newNextReviewDate }
-                    : c
-                ),
-              }
+              ...d,
+              flashcards: d.flashcards.map((c) =>
+                c.id === cardId
+                  ? { ...c, srsLevel: newSrsLevel, nextReviewDate: newNextReviewDate }
+                  : c
+              ),
+            }
             : d
         )
       );

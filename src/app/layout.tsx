@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { DecksProvider } from '@/context/DecksContext';
 import { Toaster } from '@/components/ui/toaster';
-import { FirebaseClientProvider } from '@/firebase';
+
 
 export const metadata: Metadata = {
   title: 'VerdantCards',
@@ -22,12 +22,10 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased">
-        <FirebaseClientProvider>
-          <DecksProvider>
-            {children}
-            <Toaster />
-          </DecksProvider>
-        </FirebaseClientProvider>
+        <DecksProvider>
+          {children}
+          <Toaster />
+        </DecksProvider>
       </body>
     </html>
   );

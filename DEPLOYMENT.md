@@ -7,7 +7,7 @@
 Update your `.env` file with your Supabase credentials:
 
 ```env
-GEMINI_API_KEY=AIzaSyDIllhP_Zih-yDpixpxZqUZ-24oKuoquSw
+GEMINI_API_KEY=
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
