@@ -43,3 +43,65 @@ VerdantCards is an intelligent flashcard application designed to accelerate your
 6.  **Configure Your AI**:
     - Click the **Settings** icon in the header.
     - Here, you can select your AI provider (Google AI, OpenAI, Ollama) and enter your own API keys. The app securely stores these in your browser for you.
+
+## Getting Started
+
+### Prerequisites
+- **Node.js** (v20 or later) and **npm**
+- **Docker Desktop** (required only if you want to run Supabase locally)
+- A **Supabase** project (cloud or local) and its API keys
+
+### Installation
+```bash
+# Clone the repository (if you haven't already)
+git clone <repo-url>
+cd verdana_cards
+
+# Install dependencies
+npm install
+```
+
+### Configure Environment Variables
+Create a `.env.local` file (it is ignored by git) with the following variables:
+```env
+NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+# Optional: if using Supabase service role locally
+SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+```
+If you prefer to use the cloud Supabase instance that comes with the project, copy the values from the existing `.env` file.
+
+### Running the Application
+#### Development (with cloud Supabase)
+```bash
+npm run dev
+```
+Open http://localhost:9002 in your browser.
+
+#### Development with Local Supabase
+1. Start Supabase locally (Docker must be running):
+```bash
+npx supabase start
+```
+2. Once the services are up, the local URLs will be printed. Update `.env.local` accordingly, e.g.:
+```env
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<local-anon-key>
+```
+3. Run the Next.js dev server:
+```bash
+npm run dev
+```
+
+### Building for Production
+```bash
+npm run build
+npm start   # runs the optimized production build
+```
+
+### Testing the Backend
+- The Supabase dashboard (local or cloud) shows the `decks`, `flashcards`, and `media_assets` tables.
+- Use the UI to create decks, generate cards via AI, and study them.
+
+---
+Enjoy using **VerdantCards** to boost your learning!
